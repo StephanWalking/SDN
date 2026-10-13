@@ -1,0 +1,99 @@
+meters:
+  guest_limit:
+    meter_id: 1
+    entry:
+      flags: "KBPS"
+      bands:
+        - type: "DROP"
+          rate: 10000
+
+acls:
+  guest_ratelimit:
+    - rule:
+        actions:
+          meter: guest_limit
+          allow: 1
+
+  mgmt_portsec:
+    - rule:
+        dl_src: "00:00:00:00:00:05"
+        actions:
+          allow: 1
+    - rule:
+        actions:
+          allow: 0
+
+vlans:
+  employee:
+    vid: 10
+    description: "Employee VLAN"
+  guest:
+    vid: 20
+    description: "Gast VLAN"
+  mgmt:
+    vid: 30
+    description: "Management VLAN"
+
+dps:
+  # Gebouw A - Centrale Switch (Patchkast BG)
+  sA0:
+    dp_id: 0x1
+    hardware: "Open vSwitch"
+    interfaces:
+      1: {description: "Trunk naar sA1", tagged_vlans: [employee, guest, mgmt]}
+      2: {description: "Trunk naar sA2", tagged_vlans: [employee, guest, mgmt]}
+      3: {description: "Darkfiber naar sB0", tagged_vlans: [employee, guest, mgmt]}
+      4: {description: "NAT router A employee", native_vlan: employee}
+      5: {description: "NAT router A gast", native_vlan: guest}
+
+  # Gebouw A - Verdieping 1
+  sA1:
+    dp_id: 0x2
+    hardware: "Open vSwitch"
+    interfaces:
+      1: {description: "Uplink sA0", tagged_vlans: [employee, guest, mgmt]}
+      2: {description: "Host hA1 (Employee)", native_vlan: employee}
+
+  # Gebouw A - Verdieping 2
+  sA2:
+    dp_id: 0x3
+    hardware: "Open vSwitch"
+    interfaces:
+      1: {description: "Uplink sA0", tagged_vlans: [employee, guest, mgmt]}
+      2: {description: "Host hA2 (Gast)", native_vlan: guest, acls_in: [guest_ratelimit]}
+
+  # Gebouw B - Centrale Switch (Patchkast BG)
+  sB0:
+    dp_id: 0x4
+    hardware: "Open vSwitch"
+    interfaces:
+      1: {description: "Trunk naar sB1", tagged_vlans: [employee, guest, mgmt]}
+      2: {description: "Trunk naar sB2", tagged_vlans: [employee, guest, mgmt]}
+      3: {description: "Trunk naar sB3", tagged_vlans: [employee, guest, mgmt]}
+      4: {description: "Darkfiber naar sA0", tagged_vlans: [employee, guest, mgmt]}
+      5: {description: "NAT router B employee", native_vlan: employee}
+      6: {description: "NAT router B gast", native_vlan: guest}
+
+  # Gebouw B - Verdieping 1
+  sB1:
+    dp_id: 0x5
+    hardware: "Open vSwitch"
+    interfaces:
+      1: {description: "Uplink sB0", tagged_vlans: [employee, guest, mgmt]}
+      2: {description: "Host hB1 (Employee)", native_vlan: employee}
+
+  # Gebouw B - Verdieping 2
+  sB2:
+    dp_id: 0x6
+    hardware: "Open vSwitch"
+    interfaces:
+      1: {description: "Uplink sB0", tagged_vlans: [employee, guest, mgmt]}
+      2: {description: "Host hB2 (Management)", native_vlan: mgmt, max_hosts: 1, acls_in: [mgmt_portsec]}
+
+  # Gebouw B - Verdieping 3
+  sB3:
+    dp_id: 0x7
+    hardware: "Open vSwitch"
+    interfaces:
+      1: {description: "Uplink sB0", tagged_vlans: [employee, guest, mgmt]}
+      2: {description: "Host hB3 (Gast)", native_vlan: guest, acls_in: [guest_ratelimit]}
