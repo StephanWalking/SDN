@@ -1,82 +1,11 @@
-# =====================================================================
-# FAUCET SDN CONFIGURATIE - FASE 2
-# =====================================================================
 
-# --- 1. METERS (Rate Limiting) ---
-meters:
-  guest_limit:
-    meter_id: 1
-    entry:
-      flags: "KBPS"
-      bands:
-        - type: "DROP"
-          rate: 10000          # Begrenst gastverkeer op max 10.000 kbps (10 Mbps)
+# FAUCET HOOFDCONFIGURATIE
+# ACL EN METERS WORDEN MEEGENOMEN MET /etc/faucet/acls.yaml
 
-# --- 2. ACL'S (Toegangsbeperking & Client Isolatie) ---
-acls:
-  # GAST-ISOLATIE (Studenten mogen NIET bij elkaar en NIET bij interne subnetten)
-  guest_isolation_and_ratelimit:
-    # 1. ARP en ICMPv6 Neighbor Discovery (NDP) naar de router toestaan met rate limiting
-    - rule:
-        eth_type: 0x0806
-        actions:
-          meter: guest_limit
-          allow: 1
-    - rule:
-        eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 135
-        actions:
-          meter: guest_limit
-          allow: 1
-    - rule:
-        eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 136
-        actions:
-          meter: guest_limit
-          allow: 1
+include:
+  - /etc/faucet/acls.yaml
 
-    # 2. Blokkeer alle pakketten gericht aan andere gasten in hetzelfde subnet
-    - rule:
-        eth_type: 0x0800
-        ipv4_dst: "10.20.0.0/22"
-        actions:
-          allow: 0
-    - rule:
-        eth_type: 0x86dd
-        ipv6_dst: "2001:db8:20::/64"
-        actions:
-          allow: 0
-
-    # 3. Sta alleen verkeer toe gericht aan Gateway Gebouw A of Gateway Gebouw B
-    - rule:
-        eth_dst: "00:00:00:00:aa:20"
-        actions:
-          meter: guest_limit
-          allow: 1
-    - rule:
-        eth_dst: "00:00:00:00:bb:20"
-        actions:
-          meter: guest_limit
-          allow: 1
-
-    # 4. Default Deny: al het overige verkeer blokkeren
-    - rule:
-        actions:
-          allow: 0
-
-  # MANAGEMENT PORT SECURITY (L2 Whitelisting)
-  mgmt_portsec:
-    - rule:
-        eth_src: "00:00:00:00:00:05"
-        actions:
-          allow: 1
-    - rule:
-        actions:
-          allow: 0
-
-# --- 3. VLANS ---
+# VLANS
 vlans:
   employee:
     vid: 10
@@ -88,7 +17,7 @@ vlans:
     vid: 30
     description: "Management VLAN (10.30.0.0/24 & 2001:db8:30::/64)"
 
-# --- 4. DATA PLANES (Switches & Poorten) ---
+# Switches & Poorten 
 dps:
   # Gebouw A - Centrale Switch (Patchkast BG)
   sA0:

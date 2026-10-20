@@ -2,9 +2,9 @@
 """
 Fase 2 Topologie:
 - Dual-Stack (IPv4 /22 voor >500 users + IPv6 /64)
-- Redundante Controllers
+- Redundante Controllers (c0 en c1/ faucet en faucet-b)
 - NFV Stateful Firewalling (iptables & ip6tables via conntrack)
-- IPv4 PAT/NAT Masquerading voor het /28 ISP-blok
+- IPv4 PAT/NAT Masquerading voor het /28 probleem
 - Userspace Datapath (netdev) voor OpenFlow 1.3 Meter ondersteuning
 """
 
@@ -17,7 +17,7 @@ from mininet.log import setLogLevel
 def build():
     net = Mininet(controller=None, switch=OVSSwitch, autoSetMacs=True)
 
-    # --- CONTROLLER REDUNDANTIE (Criterium 6: Level 4) ---
+    # CONTROLLER REDUNDANTIE
     c0 = net.addController('c0', controller=RemoteController, ip='172.17.0.1', port=6653)
     c1 = net.addController('c1', controller=RemoteController, ip='172.17.0.1', port=6654)
 
@@ -58,7 +58,7 @@ def build():
         h = net.addHost(name, ip=ip)
         net.addLink(h, sw)
 
-    # Externe Routers & ISP simulatie
+    # Externe Routers & ISP
     # Gebouw A
     natA = net.addHost('natA', ip=None)
     inetA = net.addHost('inetA', ip='203.0.113.1/28')
@@ -178,6 +178,6 @@ if __name__ == '__main__':
         sw.start(controllers)
 
     configure_network(net)
-    print("\n--- Fase 2 Netwerk gereed (Dual Controllers actief). Start CLI ---")
+    print("\n--- Netwerk gereed (Dual Controllers actief). Start CLI ---")
     CLI(net)
     net.stop()
