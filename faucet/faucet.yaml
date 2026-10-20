@@ -1,39 +1,79 @@
-meters:
-  guest_limit:
-    meter_id: 1
-    entry:
-      flags: "KBPS"
-      bands:
-        - type: "DROP"
-          rate: 10000
+# =====================================================================
+# FAUCET SDN CONFIGURATIE - FASE 2
+# =====================================================================
 
+# --- 1. ACL'S (Toegangsbeperking & Client Isolatie) ---
 acls:
-  guest_ratelimit:
+  # GAST-ISOLATIE (Studenten mogen NIET bij elkaar en NIET bij interne subnetten)
+  guest_isolation_and_ratelimit:
+    # 1. ARP en ICMPv6 Neighbor Discovery (NDP) naar de router toestaan
     - rule:
+        eth_type: 0x0806
         actions:
-          meter: guest_limit
+          allow: 1
+    - rule:
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 135
+        actions:
+          allow: 1
+    - rule:
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 136
+        actions:
           allow: 1
 
+    # 2. Blokkeer alle pakketten gericht aan andere gasten in hetzelfde subnet
+    - rule:
+        eth_type: 0x0800
+        ipv4_dst: "10.20.0.0/22"
+        actions:
+          allow: 0
+    - rule:
+        eth_type: 0x86dd
+        ipv6_dst: "2001:db8:20::/64"
+        actions:
+          allow: 0
+
+    # 3. Sta alleen verkeer toe gericht aan Gateway Gebouw A of Gateway Gebouw B
+    - rule:
+        eth_dst: "00:00:00:00:aa:20"
+        actions:
+          allow: 1
+    - rule:
+        eth_dst: "00:00:00:00:bb:20"
+        actions:
+          allow: 1
+
+    # 4. Default Deny: al het overige verkeer blokkeren
+    - rule:
+        actions:
+          allow: 0
+
+  # MANAGEMENT PORT SECURITY (L2 Whitelisting)
   mgmt_portsec:
     - rule:
-        dl_src: "00:00:00:00:00:05"
+        eth_src: "00:00:00:00:00:05"
         actions:
           allow: 1
     - rule:
         actions:
           allow: 0
 
+# --- 2. VLANS ---
 vlans:
   employee:
     vid: 10
-    description: "Employee VLAN"
+    description: "Employee VLAN (10.10.0.0/22 & 2001:db8:10::/64)"
   guest:
     vid: 20
-    description: "Gast VLAN"
+    description: "Gast VLAN (10.20.0.0/22 & 2001:db8:20::/64)"
   mgmt:
     vid: 30
-    description: "Management VLAN"
+    description: "Management VLAN (10.30.0.0/24 & 2001:db8:30::/64)"
 
+# --- 3. DATA PLANES (Switches & Poorten) ---
 dps:
   # Gebouw A - Centrale Switch (Patchkast BG)
   sA0:
@@ -43,8 +83,9 @@ dps:
       1: {description: "Trunk naar sA1", tagged_vlans: [employee, guest, mgmt]}
       2: {description: "Trunk naar sA2", tagged_vlans: [employee, guest, mgmt]}
       3: {description: "Darkfiber naar sB0", tagged_vlans: [employee, guest, mgmt]}
-      4: {description: "NAT router A employee", native_vlan: employee}
-      5: {description: "NAT router A gast", native_vlan: guest}
+      4: {description: "FW/NAT A employee", native_vlan: employee}
+      5: {description: "FW/NAT A gast", native_vlan: guest}
+      6: {description: "FW/NAT A mgmt", native_vlan: mgmt}
 
   # Gebouw A - Verdieping 1
   sA1:
@@ -60,7 +101,7 @@ dps:
     hardware: "Open vSwitch"
     interfaces:
       1: {description: "Uplink sA0", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Host hA2 (Gast)", native_vlan: guest, acls_in: [guest_ratelimit]}
+      2: {description: "Host hA2 (Gast)", native_vlan: guest, acls_in: [guest_isolation_and_ratelimit]}
 
   # Gebouw B - Centrale Switch (Patchkast BG)
   sB0:
@@ -71,8 +112,9 @@ dps:
       2: {description: "Trunk naar sB2", tagged_vlans: [employee, guest, mgmt]}
       3: {description: "Trunk naar sB3", tagged_vlans: [employee, guest, mgmt]}
       4: {description: "Darkfiber naar sA0", tagged_vlans: [employee, guest, mgmt]}
-      5: {description: "NAT router B employee", native_vlan: employee}
-      6: {description: "NAT router B gast", native_vlan: guest}
+      5: {description: "FW/NAT B employee", native_vlan: employee}
+      6: {description: "FW/NAT B gast", native_vlan: guest}
+      7: {description: "FW/NAT B mgmt", native_vlan: mgmt}
 
   # Gebouw B - Verdieping 1
   sB1:
@@ -96,4 +138,4 @@ dps:
     hardware: "Open vSwitch"
     interfaces:
       1: {description: "Uplink sB0", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Host hB3 (Gast)", native_vlan: guest, acls_in: [guest_ratelimit]}
+      2: {description: "Host hB3 (Gast)", native_vlan: guest, acls_in: [guest_isolation_and_ratelimit]}
