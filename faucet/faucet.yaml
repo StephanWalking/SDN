@@ -1,39 +1,24 @@
 include:
-  - /etc/faucet/acls.yaml
+  - acls.yaml
 
 vlans:
   employee:
     vid: 10
-    description: "Employee Network"
+    description: "Personeelsnetwerk"
     faucet_vips: ["10.10.0.254/22", "2001:db8:10::fe/64"]
     faucet_mac: "00:00:00:00:ff:10"
-    routes:
-      - route: {ip_dst: "203.0.113.1/32", ip_gw: "203.0.113.1"}
-      - route: {ip_dst: "203.0.113.17/32", ip_gw: "203.0.113.17"}
-      - route: {ip_dst: "2001:db8:a::1/128", ip_gw: "2001:db8:a::1"}
-      - route: {ip_dst: "2001:db8:b::1/128", ip_gw: "2001:db8:b::1"}
 
   guest:
     vid: 20
-    description: "Guest Network"
+    description: "Gastennetwerk"
     faucet_vips: ["10.20.0.254/22", "2001:db8:20::fe/64"]
     faucet_mac: "00:00:00:00:ff:20"
-    routes:
-      - route: {ip_dst: "203.0.113.1/32", ip_gw: "203.0.113.1"}
-      - route: {ip_dst: "203.0.113.17/32", ip_gw: "203.0.113.17"}
-      - route: {ip_dst: "2001:db8:a::1/128", ip_gw: "2001:db8:a::1"}
-      - route: {ip_dst: "2001:db8:b::1/128", ip_gw: "2001:db8:b::1"}
 
   mgmt:
     vid: 30
-    description: "Management Network"
+    description: "Beheernetwerk"
     faucet_vips: ["10.30.0.254/24", "2001:db8:30::fe/64"]
     faucet_mac: "00:00:00:00:ff:30"
-    routes:
-      - route: {ip_dst: "203.0.113.1/32", ip_gw: "203.0.113.1"}
-      - route: {ip_dst: "203.0.113.17/32", ip_gw: "203.0.113.17"}
-      - route: {ip_dst: "2001:db8:a::1/128", ip_gw: "2001:db8:a::1"}
-      - route: {ip_dst: "2001:db8:b::1/128", ip_gw: "2001:db8:b::1"}
 
   vlan_isp:
     vid: 100
@@ -56,7 +41,7 @@ dps:
       1:
         description: "Uplink ISP A"
         native_vlan: vlan_isp
-        acls_in: [NAT]
+        acls_in: [wan_firewall]
       2:
         description: "Stack naar sA1"
         stack: {dp: sA1, port: 1}
@@ -76,7 +61,7 @@ dps:
         stack: {dp: sA0, port: 2}
       2:
         description: "Host hA1 (Employee)"
-        native_vlan: 10
+        native_vlan: employee
         acls_in: [NAT]
 
   sA2:
@@ -88,7 +73,7 @@ dps:
         stack: {dp: sA0, port: 3}
       2:
         description: "Host hA2 (Gast)"
-        native_vlan: 20
+        native_vlan: guest
         acls_in: [guest_isolation, NAT]
 
   # ================= GEBOUW B =================
@@ -101,7 +86,7 @@ dps:
       1:
         description: "Uplink ISP B"
         native_vlan: vlan_isp
-        acls_in: [NAT]
+        acls_in: [wan_firewall]
       2:
         description: "Stack naar sB1"
         stack: {dp: sB1, port: 1}
@@ -124,7 +109,7 @@ dps:
         stack: {dp: sB0, port: 2}
       2:
         description: "Host hB1 (Employee)"
-        native_vlan: 10
+        native_vlan: employee
         acls_in: [NAT]
 
   sB2:
@@ -136,7 +121,7 @@ dps:
         stack: {dp: sB0, port: 3}
       2:
         description: "Host hB2 (Management)"
-        native_vlan: 30
+        native_vlan: mgmt
         acls_in: [mgmt_portsec, NAT]
 
   sB3:
@@ -148,5 +133,5 @@ dps:
         stack: {dp: sB0, port: 4}
       2:
         description: "Host hB3 (Gast)"
-        native_vlan: 20
+        native_vlan: guest
         acls_in: [guest_isolation, NAT]
