@@ -1,5 +1,9 @@
-# FAUCET METERS & ACLS
+# ==========================================================
+# /etc/faucet/acls.yaml
+# ==========================================================
+
 meters:
+  # NFV 1: Rate Limiter (10 Mbps met realistische burst bucket)
   guest_limit:
     meter_id: 1
     entry:
@@ -11,10 +15,10 @@ meters:
 
 acls:
   # ==========================================================
-  # 1. MANAGEMENT PORT SECURITY & ISOLATIE (hB2)
+  # 1. MANAGEMENT PORT SECURITY & ISOLATIE (sB2: poort 2)
   # ==========================================================
   mgmt_portsec:
-    # L2 ARP en ICMPv6 NDP toestaan voor whitelisted MAC
+    # NFV 2: ARP & NDP alleen toestaan voor geautoriseerd MAC-adres
     - rule:
         eth_src: "00:00:00:00:00:05"
         eth_type: 0x0806
@@ -35,7 +39,21 @@ acls:
         actions:
           allow: 1
 
-    # Volledige isolatie: Management mag niet naar Gast of Employee
+    # Gateway VIPs expliciet toestaan voor L3 routering
+    - rule:
+        eth_src: "00:00:00:00:00:05"
+        eth_type: 0x0800
+        ipv4_dst: 10.30.0.254
+        actions:
+          allow: 1
+    - rule:
+        eth_src: "00:00:00:00:00:05"
+        eth_type: 0x86dd
+        ipv6_dst: 2001:db8:30::fe
+        actions:
+          allow: 1
+
+    # Netwerkscheiding: Beheer mag NIET naar Employee of Gasten
     - rule:
         eth_src: "00:00:00:00:00:05"
         eth_type: 0x0800
@@ -61,7 +79,23 @@ acls:
         actions:
           allow: 0
 
-    # IPv6 Stateful Tracking voor uitgaand verkeer naar WAN
+    # ICMPv6 Echo Request / Reply toestaan voor pings naar buiten
+    - rule:
+        eth_src: "00:00:00:00:00:05"
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 128
+        actions:
+          allow: 1
+    - rule:
+        eth_src: "00:00:00:00:00:05"
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 129
+        actions:
+          allow: 1
+
+    # IPv6 Stateful Conntrack Tracking naar WAN
     - rule:
         eth_src: "00:00:00:00:00:05"
         eth_type: 0x86dd
@@ -86,7 +120,17 @@ acls:
         actions:
           allow: 1
 
-    # IPv4 NAPT naar ISP A
+    # IPv4 Conntrack Tracking
+    - rule:
+        eth_src: "00:00:00:00:00:05"
+        eth_type: 0x0800
+        ct_state: 0/0x20
+        actions:
+          ct:
+            zone: 1
+            table: 0
+
+    # IPv4 NAPT naar ISP A (/28 publieke pool)
     - rule:
         eth_src: "00:00:00:00:00:05"
         eth_type: 0x0800
@@ -101,7 +145,7 @@ acls:
               range_ipv4_min: 203.0.113.2
               range_ipv4_max: 203.0.113.2
 
-    # IPv4 NAPT naar ISP B
+    # IPv4 NAPT naar ISP B (/28 publieke pool)
     - rule:
         eth_src: "00:00:00:00:00:05"
         eth_type: 0x0800
@@ -116,22 +160,22 @@ acls:
               range_ipv4_min: 203.0.113.18
               range_ipv4_max: 203.0.113.18
 
-    # Overig valide verkeer binnen eigen VLAN 30 doorlaten
+    # Lokaal verkeer binnen eigen Management VLAN 30 toestaan
     - rule:
         eth_src: "00:00:00:00:00:05"
         actions:
           allow: 1
 
-    # Port Security: Blokkeer elk ander MAC-adres op poort 2
+    # Port Security Default: Blokkeer elk ander MAC-adres op poort 2
     - rule:
         actions:
           allow: 0
 
   # ==========================================================
-  # 2. GASTENBEVEILIGING (Isolatie + Rate Limit + Conntrack)
+  # 2. GASTENBEVEILIGING (sA2/sB3: Isolatie + Rate Limit + Conntrack)
   # ==========================================================
   guest_isolation:
-    # ARP en ICMPv6 NDP toestaan
+    # 1. ARP en ICMPv6 NDP toestaan voor L2/L3 resolving
     - rule:
         eth_type: 0x0806
         actions:
@@ -149,7 +193,7 @@ acls:
         actions:
           allow: 1
 
-    # Gateways (VIPs) toestaan
+    # 2. Lokale Gateways (VIPs) expliciet toestaan voor routeringsresolutie
     - rule:
         eth_type: 0x0800
         ipv4_dst: 10.20.0.254
@@ -161,7 +205,8 @@ acls:
         actions:
           allow: 1
 
-    # Isolatie: Blokkeer onderling verkeer en interne subnets
+    # 3. MICRO-SEGMENTATIE: Gasten onderling strikt blokkeren (Private VLAN)
+    # Staat BOVEN de algemene echo/verkeersregels zodat gast-pings direct vallen
     - rule:
         eth_type: 0x0800
         ipv4_dst: 10.20.0.0/22
@@ -172,6 +217,8 @@ acls:
         ipv6_dst: 2001:db8:20::/64
         actions:
           allow: 0
+
+    # 4. NETWERKSCHEIDING: Gasten mogen NIET naar Employee of Beheer
     - rule:
         eth_type: 0x0800
         ipv4_dst: 10.10.0.0/22
@@ -193,7 +240,23 @@ acls:
         actions:
           allow: 0
 
-    # IPv6 Stateful Tracking + Rate Limiting naar WAN
+    # 5. ICMPv6 Echo Request / Reply naar buiten (WAN) toestaan + limiteren
+    - rule:
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 128
+        actions:
+          meter: guest_limit
+          allow: 1
+    - rule:
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 129
+        actions:
+          meter: guest_limit
+          allow: 1
+
+    # 6. IPv6 Stateful Tracking + Rate Limiting naar WAN
     - rule:
         eth_type: 0x86dd
         ct_state: 0/0x20
@@ -218,7 +281,17 @@ acls:
           meter: guest_limit
           allow: 1
 
-    # IPv4 NAPT + Rate Limiting naar ISP A
+    # 7. IPv4 Conntrack Tracking
+    - rule:
+        eth_type: 0x0800
+        ct_state: 0/0x20
+        actions:
+          meter: guest_limit
+          ct:
+            zone: 1
+            table: 0
+
+    # 8. IPv4 NAPT + Rate Limiting naar ISP A
     - rule:
         eth_type: 0x0800
         ipv4_src: 10.0.0.0/8
@@ -234,7 +307,7 @@ acls:
               range_ipv4_min: 203.0.113.2
               range_ipv4_max: 203.0.113.2
 
-    # IPv4 NAPT + Rate Limiting naar ISP B
+    # 9. IPv4 NAPT + Rate Limiting naar ISP B
     - rule:
         eth_type: 0x0800
         ipv4_src: 10.0.0.0/8
@@ -250,13 +323,13 @@ acls:
               range_ipv4_min: 203.0.113.18
               range_ipv4_max: 203.0.113.18
 
-    # Fallback drop voor overig verkeer
+    # Fallback drop
     - rule:
         actions:
           allow: 0
 
   # ==========================================================
-  # 3. INTERNE NAT & SCHEIDING (Employee poorten)
+  # 3. INTERNE NAT & SCHEIDING (sA1/sB1: Employee poorten)
   # ==========================================================
   NAT:
     # ARP en NDP altijd doorlaten
@@ -277,7 +350,19 @@ acls:
         actions:
           allow: 1
 
-    # Strikt blokkeren naar Beheer (VLAN 30) en Gasten (VLAN 20)
+    # Gateway VIPs expliciet toestaan voor L3 routering
+    - rule:
+        eth_type: 0x0800
+        ipv4_dst: 10.10.0.254
+        actions:
+          allow: 1
+    - rule:
+        eth_type: 0x86dd
+        ipv6_dst: 2001:db8:10::fe
+        actions:
+          allow: 1
+
+    # Netwerkscheiding: Employee mag NIET naar Beheer (VLAN 30) of Gasten (VLAN 20)
     - rule:
         eth_type: 0x0800
         ipv4_dst: 10.30.0.0/24
@@ -311,7 +396,21 @@ acls:
         actions:
           allow: 1
 
-    # IPv6 Stateful Conntrack Tracking naar WAN (geen bypass meer!)
+    # ICMPv6 Echo Request / Reply toestaan voor pings naar buiten
+    - rule:
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 128
+        actions:
+          allow: 1
+    - rule:
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 129
+        actions:
+          allow: 1
+
+    # IPv6 Stateful Conntrack Tracking naar WAN
     - rule:
         eth_type: 0x86dd
         ct_state: 0/0x20
@@ -386,7 +485,7 @@ acls:
               flags: 1
 
   # ==========================================================
-  # 4. STATEFUL WAN FIREWALL (Uplinks op sA0/sB0)
+  # 4. STATEFUL WAN FIREWALL (sA0/sB0: poort 1 naar ISP's)
   # ==========================================================
   wan_firewall:
     # Peering ARP en NDP doorlaten
@@ -407,7 +506,7 @@ acls:
         actions:
           allow: 1
 
-    # IPv6 Inkomend: Conntrack sessiecontrole
+    # IPv6 Inkomend: Conntrack sessiecontrole (recirculeren naar table 0)
     - rule:
         eth_type: 0x86dd
         ct_state: 0/0x20
@@ -416,14 +515,14 @@ acls:
             zone: 1
             table: 0
 
-    # IPv6 Inkomend: Alleen antwoorden op legitieme uitgaande sessies toelaten (TCP, UDP, ICMP)
+    # IPv6 Inkomend: Alleen antwoorden op gevestigde sessies (+est+trk) doorlaten
     - rule:
         eth_type: 0x86dd
         ct_state: 0x22/0x22
         actions:
           allow: 1
 
-    # IPv6 Inkomend: Echo reply expliciet
+    # IPv6 Inkomend: Echo reply expliciet toestaan
     - rule:
         eth_type: 0x86dd
         ip_proto: 58
@@ -431,30 +530,30 @@ acls:
         actions:
           allow: 1
 
-    # IPv6: Blokkeer alle ongevraagde inkomende verbindingen
+    # IPv6: Blokkeer alle ongevraagde inkomende verbindingen vanaf internet
     - rule:
         eth_type: 0x86dd
         actions:
           allow: 0
 
-    # IPv4 Inkomend: Conntrack de-natting
+    # IPv4 Inkomend: Conntrack inspectie & de-nat (recirculeren naar table 0)
     - rule:
         eth_type: 0x0800
         ct_state: 0/0x20
         actions:
           ct:
             zone: 1
-            table: 1
+            table: 0
             nat: {}
 
-    # IPv4: Alleen antwoordverkeer doorlaten
+    # IPv4 Inkomend: Alleen antwoordverkeer (+est+trk) doorlaten
     - rule:
         eth_type: 0x0800
         ct_state: 0x22/0x22
         actions:
           allow: 1
 
-    # IPv4: Blokkeer ongevraagd verkeer
+    # IPv4: Blokkeer alle ongevraagde inkomende verbindingen vanaf internet
     - rule:
         eth_type: 0x0800
         actions:
