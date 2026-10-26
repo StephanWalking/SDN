@@ -1,100 +1,187 @@
 # FAUCET METERS & ACLS
-# Wordt ook gebruikt vanuit /etc/faucet/faucet.yaml
-
-# --- 1. METERS (Rate Limiting) ---
 meters:
   guest_limit:
     meter_id: 1
     entry:
-      flags: "KBPS"
+      flags: [KBPS, BURST]
       bands:
-        - type: "DROP"
-          rate: 10000          # Begrenst gastverkeer op max 10.000 kbps (10 Mbps)
+        - type: DROP
+          rate: 10000
+          burst_size: 500000
 
-# --- 2. ACL'S ---
 acls:
-  # GAST-ISOLATIE (Studenten mogen niet bij elkaar en niet bij interne subnetten)
-  guest_isolation_and_ratelimit:
-    # 1. ARP en ICMPv6 Neighbor Discovery (NDP) naar de router toestaan met rate limiting
+  # Management port security (L2 whitelist)
+  mgmt_portsec:
+    - rule:
+        eth_src: "00:00:00:00:00:05"
+        actions:
+          allow: 1
+    - rule:
+        actions:
+          allow: 0
+
+  # Gastenbeveiliging: isolatie + blokkade naar intern
+  guest_isolation:
+    # 1. ARP en ICMPv6 NDP toestaan
     - rule:
         eth_type: 0x0806
         actions:
-          meter: guest_limit
           allow: 1
     - rule:
         eth_type: 0x86dd
         ip_proto: 58
         icmpv6_type: 135
         actions:
-          meter: guest_limit
           allow: 1
     - rule:
         eth_type: 0x86dd
         ip_proto: 58
         icmpv6_type: 136
         actions:
-          meter: guest_limit
           allow: 1
 
-    # 2. Blokkeer alle pakketten gericht aan andere gasten in hetzelfde subnet (VLAN 20)
+    # 2. Blokkeer verkeer naar medegasten (VLAN 20)
     - rule:
         eth_type: 0x0800
-        ipv4_dst: "10.20.0.0/22"
+        ipv4_dst: 10.20.0.0/22
         actions:
           allow: 0
     - rule:
         eth_type: 0x86dd
-        ipv6_dst: "2001:db8:20::/64"
+        ipv6_dst: 2001:db8:20::/64
         actions:
           allow: 0
 
-    # 3. Blokkeer intern verkeer naar Employee (VLAN 10)
+    # 3. Blokkeer verkeer naar Personeel (VLAN 10) en Beheer (VLAN 30)
     - rule:
         eth_type: 0x0800
-        ipv4_dst: "10.10.0.0/22"
+        ipv4_dst: 10.10.0.0/22
+        actions:
+          allow: 0
+    - rule:
+        eth_type: 0x0800
+        ipv4_dst: 10.30.0.0/24
         actions:
           allow: 0
     - rule:
         eth_type: 0x86dd
-        ipv6_dst: "2001:db8:10::/64"
-        actions:
-          allow: 0
-
-    # 4. Blokkeer intern verkeer naar Management (VLAN 30)
-    - rule:
-        eth_type: 0x0800
-        ipv4_dst: "10.30.0.0/24"
+        ipv6_dst: 2001:db8:10::/64
         actions:
           allow: 0
     - rule:
         eth_type: 0x86dd
-        ipv6_dst: "2001:db8:30::/64"
+        ipv6_dst: 2001:db8:30::/64
         actions:
           allow: 0
 
-    # 5. Sta alleen verkeer toe gericht aan Gateway Gebouw A of Gateway Gebouw B
+    # 4. Overig uitgaand verkeer (naar WAN) door de meter laten lopen
     - rule:
-        eth_dst: "00:00:00:00:aa:20"
-        actions:
-          meter: guest_limit
-          allow: 1
-    - rule:
-        eth_dst: "00:00:00:00:bb:20"
         actions:
           meter: guest_limit
           allow: 1
 
-    # 6. Default Deny: al het overige verkeer blokkeren
+  # OVS Conntrack & NAT via OpenFlow
+  NAT:
+    # ARP en ICMPv6 NDP altijd direct doorlaten naar de pipeline/controller
     - rule:
-        actions:
-          allow: 0
-
-  # MANAGEMENT PORT SECURITY (L2 Whitelisting)
-  mgmt_portsec:
-    - rule:
-        eth_src: "00:00:00:00:00:05"     # Alleen hB2
+        eth_type: 0x0806
         actions:
           allow: 1
     - rule:
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 135
         actions:
-          allow: 0
+          allow: 1
+    - rule:
+        eth_type: 0x86dd
+        ip_proto: 58
+        icmpv6_type: 136
+        actions:
+          allow: 1
+
+    # IPv6 conntrack tracking
+    - rule:
+        eth_type: 0x86dd
+        ct_state: 0/0x20
+        actions:
+          ct:
+            zone: 1
+            table: 0
+
+    - rule:
+        eth_type: 0x86dd
+        ct_state: 0x21/0x21
+        actions:
+          ct:
+            zone: 1
+            flags: 1
+            table: 1
+
+    - rule:
+        eth_type: 0x86dd
+        ct_state: 0x22/0x22
+        actions:
+          allow: 1
+
+    # IPv4 conntrack tracking
+    - rule:
+        eth_type: 0x0800
+        ct_state: 0/0x20
+        actions:
+          ct:
+            zone: 1
+            table: 0
+
+    # Nieuwe verbindingen naar ISP A natten
+    - rule:
+        eth_type: 0x0800
+        ipv4_src: 10.0.0.0/8
+        ipv4_dst: 203.0.113.1
+        ct_state: 0x21/0x21
+        actions:
+          ct:
+            zone: 1
+            flags: 1
+            table: 1
+            nat:
+              flags: 1
+              range_ipv4_min: 203.0.113.2
+              range_ipv4_max: 203.0.113.2
+
+    # Nieuwe verbindingen naar ISP B natten
+    - rule:
+        eth_type: 0x0800
+        ipv4_src: 10.0.0.0/8
+        ipv4_dst: 203.0.113.17
+        ct_state: 0x21/0x21
+        actions:
+          ct:
+            zone: 1
+            flags: 1
+            table: 1
+            nat:
+              flags: 1
+              range_ipv4_min: 203.0.113.18
+              range_ipv4_max: 203.0.113.18
+
+    # Terugkerend verkeer de-natten
+    - rule:
+        eth_type: 0x0800
+        ct_zone: 1
+        ct_state: 0x22/0x22
+        actions:
+          ct:
+            zone: 1
+            flags: 1
+            table: 1
+            nat:
+              flags: 1
+
+    # Inter-VLAN verkeer intern toestaan
+    - rule:
+        eth_type: 0x0800
+        ipv4_src: 10.0.0.0/8
+        ipv4_dst: 10.0.0.0/8
+        actions:
+          allow: 1

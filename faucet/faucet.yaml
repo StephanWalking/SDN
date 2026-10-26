@@ -1,85 +1,152 @@
-
-# FAUCET HOOFDCONFIGURATIE
-# ACL EN METERS WORDEN MEEGENOMEN MET /etc/faucet/acls.yaml
-
 include:
   - /etc/faucet/acls.yaml
 
-# VLANS
 vlans:
   employee:
     vid: 10
-    description: "Employee VLAN (10.10.0.0/22 & 2001:db8:10::/64)"
+    description: "Employee Network"
+    faucet_vips: ["10.10.0.254/22", "2001:db8:10::fe/64"]
+    faucet_mac: "00:00:00:00:ff:10"
+    routes:
+      - route: {ip_dst: "203.0.113.1/32", ip_gw: "203.0.113.1"}
+      - route: {ip_dst: "203.0.113.17/32", ip_gw: "203.0.113.17"}
+      - route: {ip_dst: "2001:db8:a::1/128", ip_gw: "2001:db8:a::1"}
+      - route: {ip_dst: "2001:db8:b::1/128", ip_gw: "2001:db8:b::1"}
+
   guest:
     vid: 20
-    description: "Gast VLAN (10.20.0.0/22 & 2001:db8:20::/64)"
+    description: "Guest Network"
+    faucet_vips: ["10.20.0.254/22", "2001:db8:20::fe/64"]
+    faucet_mac: "00:00:00:00:ff:20"
+    routes:
+      - route: {ip_dst: "203.0.113.1/32", ip_gw: "203.0.113.1"}
+      - route: {ip_dst: "203.0.113.17/32", ip_gw: "203.0.113.17"}
+      - route: {ip_dst: "2001:db8:a::1/128", ip_gw: "2001:db8:a::1"}
+      - route: {ip_dst: "2001:db8:b::1/128", ip_gw: "2001:db8:b::1"}
+
   mgmt:
     vid: 30
-    description: "Management VLAN (10.30.0.0/24 & 2001:db8:30::/64)"
+    description: "Management Network"
+    faucet_vips: ["10.30.0.254/24", "2001:db8:30::fe/64"]
+    faucet_mac: "00:00:00:00:ff:30"
+    routes:
+      - route: {ip_dst: "203.0.113.1/32", ip_gw: "203.0.113.1"}
+      - route: {ip_dst: "203.0.113.17/32", ip_gw: "203.0.113.17"}
+      - route: {ip_dst: "2001:db8:a::1/128", ip_gw: "2001:db8:a::1"}
+      - route: {ip_dst: "2001:db8:b::1/128", ip_gw: "2001:db8:b::1"}
 
-# Switches & Poorten 
+  vlan_isp:
+    vid: 100
+    description: "WAN ISP Peering"
+    faucet_vips: ["203.0.113.2/28", "2001:db8:a::2/64", "203.0.113.18/28", "2001:db8:b::2/64"]
+    faucet_mac: "00:00:00:00:ff:90"
+
+routers:
+  router_isp:
+    vlans: [employee, guest, mgmt, vlan_isp]
+
 dps:
-  # Gebouw A - Centrale Switch (Patchkast BG)
+  # ================= GEBOUW A =================
   sA0:
     dp_id: 0x1
     hardware: "Open vSwitch"
+    stack:
+      priority: 1
     interfaces:
-      1: {description: "Trunk naar sA1", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Trunk naar sA2", tagged_vlans: [employee, guest, mgmt]}
-      3: {description: "Darkfiber naar sB0", tagged_vlans: [employee, guest, mgmt]}
-      4: {description: "FW/NAT A employee", native_vlan: employee}
-      5: {description: "FW/NAT A gast", native_vlan: guest}
-      6: {description: "FW/NAT A mgmt", native_vlan: mgmt}
+      1:
+        description: "Uplink ISP A"
+        native_vlan: vlan_isp
+        acls_in: [NAT]
+      2:
+        description: "Stack naar sA1"
+        stack: {dp: sA1, port: 1}
+      3:
+        description: "Stack naar sA2"
+        stack: {dp: sA2, port: 1}
+      4:
+        description: "Darkfiber stack naar sB0"
+        stack: {dp: sB0, port: 5}
 
-  # Gebouw A - Verdieping 1
   sA1:
     dp_id: 0x2
     hardware: "Open vSwitch"
     interfaces:
-      1: {description: "Uplink sA0", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Host hA1 (Employee)", native_vlan: employee}
+      1:
+        description: "Stack naar sA0"
+        stack: {dp: sA0, port: 2}
+      2:
+        description: "Host hA1 (Employee)"
+        native_vlan: 10
+        acls_in: [NAT]
 
-  # Gebouw A - Verdieping 2
   sA2:
     dp_id: 0x3
     hardware: "Open vSwitch"
     interfaces:
-      1: {description: "Uplink sA0", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Host hA2 (Gast)", native_vlan: guest, acls_in: [guest_isolation_and_ratelimit]}
+      1:
+        description: "Stack naar sA0"
+        stack: {dp: sA0, port: 3}
+      2:
+        description: "Host hA2 (Gast)"
+        native_vlan: 20
+        acls_in: [guest_isolation, NAT]
 
-  # Gebouw B - Centrale Switch (Patchkast BG)
+  # ================= GEBOUW B =================
   sB0:
-    dp_id: 0x4
+    dp_id: 0x11
     hardware: "Open vSwitch"
+    stack:
+      priority: 2
     interfaces:
-      1: {description: "Trunk naar sB1", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Trunk naar sB2", tagged_vlans: [employee, guest, mgmt]}
-      3: {description: "Trunk naar sB3", tagged_vlans: [employee, guest, mgmt]}
-      4: {description: "Darkfiber naar sA0", tagged_vlans: [employee, guest, mgmt]}
-      5: {description: "FW/NAT B employee", native_vlan: employee}
-      6: {description: "FW/NAT B gast", native_vlan: guest}
-      7: {description: "FW/NAT B mgmt", native_vlan: mgmt}
+      1:
+        description: "Uplink ISP B"
+        native_vlan: vlan_isp
+        acls_in: [NAT]
+      2:
+        description: "Stack naar sB1"
+        stack: {dp: sB1, port: 1}
+      3:
+        description: "Stack naar sB2"
+        stack: {dp: sB2, port: 1}
+      4:
+        description: "Stack naar sB3"
+        stack: {dp: sB3, port: 1}
+      5:
+        description: "Darkfiber stack naar sA0"
+        stack: {dp: sA0, port: 4}
 
-  # Gebouw B - Verdieping 1
   sB1:
-    dp_id: 0x5
+    dp_id: 0x12
     hardware: "Open vSwitch"
     interfaces:
-      1: {description: "Uplink sB0", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Host hB1 (Employee)", native_vlan: employee}
+      1:
+        description: "Stack naar sB0"
+        stack: {dp: sB0, port: 2}
+      2:
+        description: "Host hB1 (Employee)"
+        native_vlan: 10
+        acls_in: [NAT]
 
-  # Gebouw B - Verdieping 2
   sB2:
-    dp_id: 0x6
+    dp_id: 0x13
     hardware: "Open vSwitch"
     interfaces:
-      1: {description: "Uplink sB0", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Host hB2 (Management)", native_vlan: mgmt, max_hosts: 1, acls_in: [mgmt_portsec]}
+      1:
+        description: "Stack naar sB0"
+        stack: {dp: sB0, port: 3}
+      2:
+        description: "Host hB2 (Management)"
+        native_vlan: 30
+        acls_in: [mgmt_portsec, NAT]
 
-  # Gebouw B - Verdieping 3
   sB3:
-    dp_id: 0x7
+    dp_id: 0x14
     hardware: "Open vSwitch"
     interfaces:
-      1: {description: "Uplink sB0", tagged_vlans: [employee, guest, mgmt]}
-      2: {description: "Host hB3 (Gast)", native_vlan: guest, acls_in: [guest_isolation_and_ratelimit]}
+      1:
+        description: "Stack naar sB0"
+        stack: {dp: sB0, port: 4}
+      2:
+        description: "Host hB3 (Gast)"
+        native_vlan: 20
+        acls_in: [guest_isolation, NAT]
