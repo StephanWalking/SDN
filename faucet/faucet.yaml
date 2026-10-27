@@ -25,6 +25,13 @@ vlans:
     description: "WAN ISP Peering"
     faucet_vips: ["203.0.113.2/28", "2001:db8:a::2/64", "203.0.113.18/28", "2001:db8:b::2/64"]
     faucet_mac: "00:00:00:00:ff:90"
+    routes:
+      - route:
+          ip_gw: "203.0.113.1"
+          ip_dst: "0.0.0.0/0"
+      - route:
+          ip_gw: "2001:db8:a::1"
+          ip_dst: "::/0"
 
 routers:
   router_isp:
@@ -74,7 +81,7 @@ dps:
       2:
         description: "Host hA2 (Gast)"
         native_vlan: guest
-        acls_in: [guest_isolation, NAT]
+        acls_in: [guest_isolation]
 
   # ================= GEBOUW B =================
   sB0:
@@ -122,7 +129,7 @@ dps:
       2:
         description: "Host hB2 (Management)"
         native_vlan: mgmt
-        acls_in: [mgmt_portsec, NAT]
+        acls_in: [mgmt_portsec]
 
   sB3:
     dp_id: 0x14
@@ -134,4 +141,4 @@ dps:
       2:
         description: "Host hB3 (Gast)"
         native_vlan: guest
-        acls_in: [guest_isolation, NAT]
+        acls_in: [guest_isolation]

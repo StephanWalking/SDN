@@ -79,22 +79,8 @@ acls:
         actions:
           allow: 0
 
-    # ICMPv6 Echo Request / Reply toestaan voor pings naar buiten
-    - rule:
-        eth_src: "00:00:00:00:00:05"
-        eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 128
-        actions:
-          allow: 1
-    - rule:
-        eth_src: "00:00:00:00:00:05"
-        eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 129
-        actions:
-          allow: 1
-
+    # ICMPv6 echo (ping) wordt bewust NIET apart toegestaan: het loopt via de
+    # conntrack-regels hieronder, zodat het antwoord alleen terugkomt als +est.
     # IPv6 Stateful Conntrack Tracking naar WAN
     - rule:
         eth_src: "00:00:00:00:00:05"
@@ -240,28 +226,29 @@ acls:
         actions:
           allow: 0
 
-    # 5. ICMPv6 Echo Request / Reply naar buiten (WAN) toestaan + limiteren
+    # 4b. IPv6 link-local (fe80::/10) en multicast (ff00::/8) blokkeren.
+    # NDP (type 135/136) is hierboven al toegestaan en matcht dus eerder.
+    # Zonder deze regels kunnen gasten elkaar via fe80:: bereiken.
     - rule:
         eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 128
+        ipv6_dst: fe80::/10
         actions:
-          meter: guest_limit
-          allow: 1
+          allow: 0
     - rule:
         eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 129
+        ipv6_dst: ff00::/8
         actions:
-          meter: guest_limit
-          allow: 1
+          allow: 0
+
+    # 5. ICMPv6 echo (ping) loopt via de conntrack-regels hieronder (stateful + meter)
 
     # 6. IPv6 Stateful Tracking + Rate Limiting naar WAN
+    # Let op: GEEN meter op de eerste (-trk) ct-regel. Dat pakket wordt gerecirculeerd
+    # en komt daarna nogmaals binnen; een meter op beide passes telt elk pakket dubbel.
     - rule:
         eth_type: 0x86dd
         ct_state: 0/0x20
         actions:
-          meter: guest_limit
           ct:
             zone: 1
             table: 0
@@ -282,11 +269,11 @@ acls:
           allow: 1
 
     # 7. IPv4 Conntrack Tracking
+    # Idem: geen meter op de -trk-pass, de meter zit op de regels na recirculatie.
     - rule:
         eth_type: 0x0800
         ct_state: 0/0x20
         actions:
-          meter: guest_limit
           ct:
             zone: 1
             table: 0
@@ -396,20 +383,7 @@ acls:
         actions:
           allow: 1
 
-    # ICMPv6 Echo Request / Reply toestaan voor pings naar buiten
-    - rule:
-        eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 128
-        actions:
-          allow: 1
-    - rule:
-        eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 129
-        actions:
-          allow: 1
-
+    # ICMPv6 echo (ping) loopt via de conntrack-regels hieronder (stateful)
     # IPv6 Stateful Conntrack Tracking naar WAN
     - rule:
         eth_type: 0x86dd
@@ -484,6 +458,11 @@ acls:
             nat:
               flags: 1
 
+    # Fallback drop (expliciet, ter documentatie; Faucet dropt ongematcht verkeer ook zelf)
+    - rule:
+        actions:
+          allow: 0
+
   # ==========================================================
   # 4. STATEFUL WAN FIREWALL (sA0/sB0: poort 1 naar ISP's)
   # ==========================================================
@@ -519,14 +498,6 @@ acls:
     - rule:
         eth_type: 0x86dd
         ct_state: 0x22/0x22
-        actions:
-          allow: 1
-
-    # IPv6 Inkomend: Echo reply expliciet toestaan
-    - rule:
-        eth_type: 0x86dd
-        ip_proto: 58
-        icmpv6_type: 129
         actions:
           allow: 1
 
