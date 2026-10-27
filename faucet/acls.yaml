@@ -1,6 +1,6 @@
-# ==========================================================
+
 # /etc/faucet/acls.yaml
-# ==========================================================
+
 
 meters:
   # NFV 1: Rate Limiter (10 Mbps met realistische burst bucket)
@@ -14,9 +14,7 @@ meters:
           burst_size: 1200
 
 acls:
-  # ==========================================================
   # 1. MANAGEMENT PORT SECURITY & ISOLATIE (sB2: poort 2)
-  # ==========================================================
   mgmt_portsec:
     # NFV 2: ARP & NDP alleen toestaan voor geautoriseerd MAC-adres
     - rule:
@@ -157,9 +155,9 @@ acls:
         actions:
           allow: 0
 
-  # ==========================================================
+
   # 2. GASTENBEVEILIGING (sA2/sB3: Isolatie + Rate Limit + Conntrack)
-  # ==========================================================
+
   guest_isolation:
     # 1. ARP en ICMPv6 NDP toestaan voor L2/L3 resolving
     - rule:
@@ -192,7 +190,6 @@ acls:
           allow: 1
 
     # 3. MICRO-SEGMENTATIE: Gasten onderling strikt blokkeren (Private VLAN)
-    # Staat BOVEN de algemene echo/verkeersregels zodat gast-pings direct vallen
     - rule:
         eth_type: 0x0800
         ipv4_dst: 10.20.0.0/22
@@ -243,8 +240,6 @@ acls:
     # 5. ICMPv6 echo (ping) loopt via de conntrack-regels hieronder (stateful + meter)
 
     # 6. IPv6 Stateful Tracking + Rate Limiting naar WAN
-    # Let op: GEEN meter op de eerste (-trk) ct-regel. Dat pakket wordt gerecirculeerd
-    # en komt daarna nogmaals binnen; een meter op beide passes telt elk pakket dubbel.
     - rule:
         eth_type: 0x86dd
         ct_state: 0/0x20
@@ -269,7 +264,6 @@ acls:
           allow: 1
 
     # 7. IPv4 Conntrack Tracking
-    # Idem: geen meter op de -trk-pass, de meter zit op de regels na recirculatie.
     - rule:
         eth_type: 0x0800
         ct_state: 0/0x20
@@ -315,9 +309,7 @@ acls:
         actions:
           allow: 0
 
-  # ==========================================================
   # 3. INTERNE NAT & SCHEIDING (sA1/sB1: Employee poorten)
-  # ==========================================================
   NAT:
     # ARP en NDP altijd doorlaten
     - rule:
@@ -463,9 +455,7 @@ acls:
         actions:
           allow: 0
 
-  # ==========================================================
   # 4. STATEFUL WAN FIREWALL (sA0/sB0: poort 1 naar ISP's)
-  # ==========================================================
   wan_firewall:
     # Peering ARP en NDP doorlaten
     - rule:
